@@ -1,0 +1,39 @@
+#!/bin/python3
+
+import sys
+import socket
+import select
+import argparse
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="A simple TCP ping server.")
+    parser.add_argument('listen_port', help="the port that the server listen on.", type=int)
+
+    # setup the server socket and the epoll object
+    with socket.socket() as sock, select.epoll() as epoll:
+        sock.bind(("0.0.0.0", parser.parse_args().listen_port))
+        sock.listen(5)
+        epoll.register(sock.fileno(), select.EPOLLIN)
+
+        connections = {}
+        while True:
+            for fd, event in epoll.poll():
+                # server socket is ready for accepting new connections
+                if fd == sock.fileno():
+                    conn, _ = sock.accept()
+                    epoll.register(conn.fileno(), select.EPOLLIN)
+                    connections[conn.fileno()] = conn
+                # some connections is ready to be read
+                elif event & select.EPOLLIN:
+                    conn = connections[fd]
+                    try:
+                        recv = conn.recv(4096).decode("UTF-8")
+                        if recv.isdecimal():
+                            print("recv from %s:%d, seq = %s" % (*conn.getpeername(), recv))
+                            conn.send(recv.encode("UTF-8"))
+                        else:
+                            raise socket.error
+                    except:
+                        epoll.unregister(fd)
+                        conn.close()
+                        del connections[fd]

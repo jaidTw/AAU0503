@@ -1,0 +1,63 @@
+#!/bin/python3
+
+import sys
+import socket
+import time
+import argparse
+import threading
+
+def ping(host, max_seq, timeout):
+    seq = 0
+    conn = socket.socket()
+    conn.settimeout(timeout/1000)
+    while True:
+        try:
+            if seq == max_seq and max_seq != 0:
+                conn.close()
+                return
+            conn.connect((host.split(":")[0], int(host.split(":")[1])))
+            break
+        except socket.timeout:
+            seq += 1
+
+    while True:
+        if seq == max_seq and max_seq != 0:
+            conn.sendall(b"-1")
+            conn.close()
+            break
+        else:
+            prev = time.time()
+            conn.send(b"%d" % seq)
+            try:
+                recv = conn.recv(4096)
+                RTT = time.time() - prev
+                if RTT > timeout / 1000:
+                    raise socket.timeout
+                print("recv from %s:%d, seq = %d, RTT = %f msec" % (*conn.getpeername(), seq, RTT * 1000))
+            except socket.timeout:
+                print("timeout when connect to %s:%d, seq = %d" % (*conn.getpeername(), seq))
+            finally:
+                seq += 1
+                time.sleep(0.5)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="A simple TCP ping client")
+    parser.add_argument('-n', dest="number", type=int, default=0,
+            help="number of sequences. The default value is 0, which means infinite.")
+    parser.add_argument('-t', dest="timeout", type=int, default=1000,
+            help="maximum timeout in millisecond(s). The default value is 1000")
+    parser.add_argument('hosts', nargs="+",
+            help="hosts that request will be send to. In the format \"host:port\", \
+                  host can be either a domain or a IPv4 address.")
+    args = parser.parse_args()
+    hosts, max_seq, timeout = args.hosts, args.number, args.timeout
+
+    threads = []
+    try:
+        for host in hosts:
+            thread = threading.Thread(target=ping, args=(host, max_seq, timeout))
+            thread.start()
+            threads.append(thread)
+    except (KeyboardInterrupt, SystemExit):
+        for thread in threads:
+            thread.join()
