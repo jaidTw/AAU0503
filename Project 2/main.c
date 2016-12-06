@@ -11,6 +11,7 @@
 
 void* DEBUG_recvall(void *arg);
 int create_connection();
+int do_action(int sock, const char *tag, const char* content);
 int login(int sock, const char *uname, const char *passwd);
 int change_board(int sock, char *board_name);
 int set_title(int sock, char *title);
@@ -43,6 +44,9 @@ int create_connection() {
 
     freeaddrinfo(srvinf);
     return sock;
+}
+
+int do_action(int sock, const char *tag, const char* content) {
 }
 
 int login(int sock, const char *uname, const char *passwd) {
@@ -98,42 +102,47 @@ int logout(int sock) {
 }
 
 int main(void) {
-    int conn = create_connection();
+//    int conn = create_connection();
     FILE *fp = fopen("P_input.txt", "r");
     if(fp == NULL) {
         fprintf(stderr, "P_input.txt open failed\n");
         exit(-1);
     }
-    pthread_t tid;
-    pthread_create(&tid, NULL, DEBUG_recvall, (void *)&conn);
+//    pthread_t tid;
+//    pthread_create(&tid, NULL, DEBUG_recvall, (void *)&conn);
     
-    char tag[1024];
+    
     char content[4096];
+    char buf[8192];
+
+//    login(conn, username, password);
     
-    char username[32];
-    char password[32];
-    fscanf(fp, "<%[^>]>%[^<]</%*[^>]>\n", tag, username);
-    fscanf(fp, "<%[^>]>%[^<]</%*[^>]>\n", tag, password);
-
-    login(conn, username, password);
-    
-
-
+    int closed = 1;
+    char tag[32], close_tag[32];
+    char *buf_p;
     for(;;) {
-        fscanf(fp, "<%[^>]>%[^<]</%*[^>]>\n", tag, content);
-        if(!strncmp(tag, "EXIT", 4)) {
-            return 0;
-            logout(conn);
-        }
+        if(closed) {
+            fgets(buf, 4096, fp);
+            if(!strncmp(buf, "<EXIT>", 6)) { return 0;}
+            sscanf(buf, "<%[^>]", tag);
+            snprintf(close_tag, 32, "</%s>", tag);
 
-        if(!strncmp(tag, "BOARD", 5)) {
-            change_board(conn, content);
-            fscanf(fp, "<%[^>]>%[^<]</%*[^>]>\n", tag, content);
-            set_title(conn, content);
-            fscanf(fp, "<%[^>]>%[^<]</%*[^>]>\n", tag, content);
-            set_content(conn, content);
+            content[0] = '\0';
+            buf_p = buf + 2 + strlen(tag);
+            closed = 0;
+        } else {
+            char *end_tag_p;
+            if((end_tag_p = strstr(buf_p, close_tag))) {
+                content[strlen(content) + (end_tag_p - buf_p)] = '\0';
+                strncat(content, buf_p, end_tag_p - buf_p);
+                closed = 1;
+                printf("TAG = %s, CONTENT = %s\n", tag, content);
+            } else {
+                strcat(content, buf_p);
+                fgets(buf, 4096, fp);
+                buf_p = buf;
+            }
         }
     }
-
     return 0;
 }
