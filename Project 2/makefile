@@ -1,2 +1,4 @@
 all:
-	g++ -std=gnu++14 -pthread -g -Og main.cpp -o project2
+	gcc -std=gnu11 -pthread -g -Og main.c -o project2
+clean:
+	rm project2
