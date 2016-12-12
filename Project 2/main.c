@@ -14,6 +14,9 @@ int login(int sock, const char *uname, const char *passwd);
 int change_board(int sock, const char *board_name);
 int set_title(int sock, const char *title);
 int post(int sock, const char *content);
+int view_post(int sock, const char *number);
+int push(int sock, const char *content);
+int reply(int sock, const char *content);
 void logout(int sock);
 
 int create_connection() {
@@ -46,20 +49,26 @@ int create_connection() {
 
 int do_action(int sock, const char *tag, char* content) {
     static char username[32], password[32];
-    if(!strncmp(tag, "ID", 2)) {
+    if(!strncmp(tag, "ID", 3)) {
         strncpy(username, content, 32);
-    } else if(!strncmp(tag, "PASS", 4)) {
+    } else if(!strncmp(tag, "PASS", 5)) {
         strncpy(password, content, 32);
         login(sock, username, password);
-    } else if(!strncmp(tag, "BOARD", 5)) {
+    } else if(!strncmp(tag, "BOARD", 6)) {
         change_board(sock, content);
-    } else if(!strncmp(tag, "P", 1)) {
+    } else if(!strncmp(tag, "P", 2)) {
         set_title(sock, content);
-    } else if(!strncmp(tag, "CONTENT", 7)) {
+    } else if(!strncmp(tag, "CONTENT", 8)) {
         char *p = content;
         while((p = strchr(p, '\n')))
             *p = '\r';
         post(sock, content);
+    } else if(!strncmp(tag, "VIEW", 5)) {
+        view_post(sock, content);
+    } else if(!strncmp(tag, "PUSH", 5)) {
+        push(sock, content);
+    } else if(!strncmp(tag, "REPLY", 6)) {
+        reply(sock, content);
     }
     sleep(1);
     return 0;
@@ -90,8 +99,29 @@ int set_title(int sock, const char *title) {
 
 int post(int sock, const char *content) {
     dprintf(sock, "\b\b\b\b\b\b\b\b\b\b");
-    // content -> ^x -> s -> enter -> etner
+    // content -> ^x -> s -> \r -> \r
     dprintf(sock, "%s\x18s\r\r", content);
+    return 0;
+}
+
+int view_post(int sock, const char *number) {
+    dprintf(sock, "\x03\x03\x03\x03\x03\x03\x03\x03\x03\x03");
+    // number -> \r -> \r
+    dprintf(sock, "%s\r\r", number);
+    return 0;
+}
+
+int push(int sock, const char *content) {
+    dprintf(sock, "\x03\x03\x03\x03\x03\x03\x03\x03\x03\x03");
+    // X -> \r -> -> content -> \r -> y -> \r
+    dprintf(sock, "\x58\r%s\ry\r", content);
+    return 0;
+}
+
+int reply(int sock, const char *content) {
+    dprintf(sock, "\x03\x03\x03\x03\x03\x03\x03\x03\x03\x03");
+    // y -> \r -> \r -> n -> \r -> content -> ^x -> s -> \r -> \r
+    dprintf(sock, "y\r\rn\r%s\x18s\r\r", content);
     return 0;
 }
 
@@ -112,7 +142,7 @@ int main(void) {
         fprintf(stderr, "P_input.txt open failed\n");
         exit(1);
     }
-    
+
     char content[4096];
     char buf[8192];
     char tag[32], close_tag[32];
