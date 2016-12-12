@@ -8,7 +8,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-int create_connection();
+static char server[32] = "ptt.cc";
+static char username[32], password[32];
+
+int create_connection(const char *server);
 int do_action(int sock, const char *tag, char *content);
 int login(int sock, const char *uname, const char *passwd);
 int change_board(int sock, const char *board_name);
@@ -19,7 +22,7 @@ int push(int sock, const char *content);
 int reply(int sock, const char *content);
 void logout(int sock);
 
-int create_connection() {
+int create_connection(const char *server) {
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if(sock < 0) {
         perror("socket : ");
@@ -33,7 +36,7 @@ int create_connection() {
     };
 
     struct addrinfo *srvinf;
-    if(getaddrinfo("ptt.cc", "telnet", &hints, &srvinf) < 0) {
+    if(getaddrinfo(server, "telnet", &hints, &srvinf) < 0) {
         perror("getaddrinfo : ");
         exit(1);
     }
@@ -48,11 +51,11 @@ int create_connection() {
 }
 
 int do_action(int sock, const char *tag, char* content) {
-    static char username[32], password[32];
     if(!strncmp(tag, "ID", 3)) {
         strncpy(username, content, 32);
     } else if(!strncmp(tag, "PASS", 5)) {
         strncpy(password, content, 32);
+        sock = create_connection(server);
         login(sock, username, password);
     } else if(!strncmp(tag, "BOARD", 6)) {
         change_board(sock, content);
@@ -68,10 +71,15 @@ int do_action(int sock, const char *tag, char* content) {
     } else if(!strncmp(tag, "PUSH", 5)) {
         push(sock, content);
     } else if(!strncmp(tag, "REPLY", 6)) {
+        char *p = content;
+        while((p = strchr(p, '\n')))
+            *p = '\r';
         reply(sock, content);
+    } else if(!strncmp(tag, "SERVER", 7)) {
+        strncpy(server, content, 32);
     }
     sleep(1);
-    return 0;
+    return sock;
 }
 
 int login(int sock, const char *uname, const char *passwd) {
@@ -113,8 +121,13 @@ int view_post(int sock, const char *number) {
 
 int push(int sock, const char *content) {
     dprintf(sock, "\x03\x03\x03\x03\x03\x03\x03\x03\x03\x03");
-    // X -> \r -> -> content -> \r -> y -> \r
-    dprintf(sock, "\x58\r%s\ry\r", content);
+    if(!strncmp(server, "ptt2.cc", 8)) {
+        // X -> -> content -> \r -> y -> \r
+        dprintf(sock, "X%s\ry\r", content);
+    } else {
+        // X -> \r -> -> content -> \r -> y -> \r
+        dprintf(sock, "X\r%s\ry\r", content);
+    }
     return 0;
 }
 
@@ -136,7 +149,7 @@ void logout(int sock) {
 }
 
 int main(void) {
-    int conn = create_connection();
+    int conn = -1;
     FILE *fp = fopen("P_input.txt", "r");
     if(fp == NULL) {
         fprintf(stderr, "P_input.txt open failed\n");
@@ -165,7 +178,7 @@ int main(void) {
             char *end_tag_p;
             if((end_tag_p = strstr(buf_p, close_tag))) {
                 strncat(content, buf_p, end_tag_p - buf_p);
-                do_action(conn, tag, content);
+                conn = do_action(conn, tag, content);
                 closed = 1;
             } else {
                 strcat(content, buf_p);
